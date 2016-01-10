@@ -1,9 +1,9 @@
 module React.WrapperGen.Main where
 
-import Prelude (Unit, ($), bind, (++), map, id, return, pure, not, (<<<), (/=), (<$>), (<*>))
+import Prelude
 import Data.Maybe (Maybe(Just,Nothing))
 import Data.Array ((!!))
-import Data.Array (drop, mapMaybe) as A
+import Data.Array as A
 import Data.Tuple (Tuple(Tuple))
 import Data.List as L
 import Data.StrMap as M
@@ -13,7 +13,7 @@ import Data.String as S
 import Data.Char as C
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Exception (EXCEPTION, catchException)
-import Control.Monad.Eff.Console (CONSOLE, error)
+import Control.Monad.Eff.Console (CONSOLE, error, log)
 import Node.FS (FS) as FS
 import Node.FS.Sync (writeTextFile, readTextFile) as FS
 import Node.Encoding as E
@@ -115,17 +115,18 @@ getType baseFname fname name prefix info =
     showField (Tuple pname ty) = (if pname /= toLowerInitial pname then "-- " else "")
       ++ pname ++ " :: " ++ showType ty
 
-getOutputFiles :: forall e. FilePath -> String -> String -> String -> Array FilePath -> Eff (fs :: FS.FS, err :: EXCEPTION | e) Unit
+getOutputFiles :: forall e. FilePath -> String -> String -> String -> Array FilePath -> Eff (fs :: FS.FS, err :: EXCEPTION, console :: CONSOLE | e) Unit
 getOutputFiles baseFname moduleName prefix outDir files = do
+  log $ "Generating for " ++ (show $ A.length files) ++ " files"
   infos :: Array (Maybe TranslateResults) <- traverse getOutputType files
   let infos' :: Array TranslateResults
       infos' = A.mapMaybe id infos
-  let purs = "module " ++ moduleName ++ " where\n"
-        ++ "import Prelude (Unit)\n"
-        ++ "import React (EventHandler)\n"
-        ++ "import Data.Options (class IsOption, Options, Option)\n"
-        ++ "import Data.Foreign (Foreign)\n"
-        ++ """
+  let purs = "module " ++ moduleName ++ " where" ++ """
+import Prelude (Unit, unit)
+import React (EventHandler, ReactClass)
+import Data.Options (class IsOption, Option, Options, opt, options)
+import Data.Foreign (Foreign)
+
 newtype EventHandlerOpt = EventHandlerOpt (EventHandler Unit)
 instance eventHandlerIsOption :: IsOption EventHandlerOpt where
   assoc k a = isOptionPrimFn k a
@@ -149,16 +150,23 @@ exports.isOptionPrimFn = function (k) {
   FS.writeTextFile E.UTF8 (NP.concat [outDir, moduleName] ++ ".js") js
 
   where
-  getOutputType :: forall e'. FilePath -> Eff (fs :: FS.FS | e') (Maybe TranslateResults)
-  getOutputType fname = catchException (\_ -> pure Nothing) do
-    let name = kebabToPascal $ _.name $ parse fname
-    contents <- FS.readTextFile E.UTF8 fname
-    info <- DG.parse contents
-    return $ Just $ getType baseFname fname name prefix info
+  getOutputType :: forall e'. FilePath -> Eff (fs :: FS.FS, console :: CONSOLE | e') (Maybe TranslateResults)
+  getOutputType fname = catchException
+    (\e -> do
+      error $ "Failed to read: " ++ fname ++ ": " ++ show e
+      pure Nothing)
+    do
+      let name = kebabToPascal $ _.name $ parse fname
+      contents <- FS.readTextFile E.UTF8 fname
+      info <- DG.parse contents
+      log $ "Read: " ++ fname
+      return $ Just $ getType baseFname fname name prefix info
 
 main :: forall e. Eff (console :: CONSOLE, fs :: FS.FS, process :: P.PROCESS, err :: EXCEPTION | e) Unit
 main = do
   argv <- P.argv
   case { base: _, moduleName: _, prefix: _, outDir: _ } <$> argv !! 2 <*> argv !! 3 <*> argv !! 4 <*> argv !! 5 of
-    Just { base, moduleName, prefix, outDir } -> getOutputFiles base moduleName prefix outDir $ A.drop 5 argv
+    Just { base, moduleName, prefix, outDir } -> do
+      log "Running getOutputFiles"
+      getOutputFiles base moduleName prefix outDir $ A.drop 5 argv
     _ -> error "Usage: gen baseFileName moduleName prefix outDir [files...]"
