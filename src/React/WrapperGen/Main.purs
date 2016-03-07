@@ -124,26 +124,16 @@ getOutputFiles baseFname moduleName prefix outDir files = do
   let purs = "module " ++ moduleName ++ " where" ++ """
 import Prelude (Unit, unit)
 import React (EventHandler, ReactClass)
-import Data.Options (class IsOption, Option, Options, opt, options)
+import Data.Options (Option, Options, opt, options)
 import Data.Foreign (Foreign)
 
 newtype EventHandlerOpt = EventHandlerOpt (EventHandler Unit)
-instance eventHandlerIsOption :: IsOption EventHandlerOpt where
-  assoc k a = isOptionPrimFn k a
-foreign import isOptionPrimFn :: forall b a. (Option b a) -> a -> (Options b)
 
 newtype UnknownType = UnknownType Foreign
-instance unknownIsOption :: IsOption UnknownType where
-  assoc k a = isOptionPrimFn k a
-
 """
         ++ (S.joinWith "" $ map _.extern infos' ++ map _.props infos')
   let js = "// module " ++ moduleName ++ """
-exports.isOptionPrimFn = function (k) {
-  return function (v) {
-    return [[k,v]];
-  };
-};
+
 """
             ++ (S.joinWith "" $ map _.js infos')
   FS.writeTextFile E.UTF8 (NP.concat [outDir, moduleName] ++ ".purs") purs
