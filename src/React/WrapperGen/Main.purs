@@ -22,7 +22,7 @@ import Node.Path (FilePath, parse, relative)
 import Node.Path (concat) as NP
 import React.DocGen as DG
 
-data PropType = PBool | PFunc | PNumber | PString | PElement | PUnknown String
+data PropType = PBool | PFunc | PNumber | PString | PElement | PNode | PUnknown String
 
 propType :: DG.PropInfo -> PropType
 propType p =
@@ -31,6 +31,8 @@ propType p =
     "func" -> PFunc
     "number" -> PNumber
     "string" -> PString
+    "node" -> PNode
+    "element" -> PElement
     s -> PUnknown s
 
 showType :: PropType -> String
@@ -39,13 +41,13 @@ showType PFunc = "EventHandlerOpt"
 showType PNumber = "Number"
 showType PString = "String"
 showType PElement = "ReactElement"
+showType PNode = "Node"
 showType (PUnknown s) = "UnknownType"
 
 excludeProp :: Tuple String PropType -> Boolean
 excludeProp (Tuple _ (PUnknown _)) = true
 excludeProp (Tuple "children" _) = true
 excludeProp _ = false
-
 
 mapStrInitial :: (Char -> Char) -> String -> String
 mapStrInitial f s =
@@ -59,7 +61,6 @@ sepToPascal sep = S.joinWith "" <<< map toUpperInitial <<< S.split sep
 toUpperInitial :: String -> String
 toUpperInitial = mapStrInitial C.toUpper
 
-
 toLowerInitial :: String -> String
 toLowerInitial = mapStrInitial C.toLower
 
@@ -68,7 +69,7 @@ kebabToCamel = toLowerInitial <<< sepToPascal "-"
 kebabToPascal :: String -> String
 kebabToPascal = sepToPascal "-"
 
-type TranslateResults = { extern :: String, js :: String, props :: String }
+type TranslateResults = { extern :: String, js :: String, props :: String, name :: String }
 
 getType :: FilePath -> FilePath -> String -> String -> DG.DocResult -> TranslateResults
 getType baseFname fname name prefix info =
@@ -76,28 +77,21 @@ getType baseFname fname name prefix info =
       camelName = toLowerInitial name
       knownTypes = L.filter (not <<< excludeProp) types
       unknownTypes = L.filter excludeProp types
-      extern = "foreign import mk" ++ name ++ " :: Unit -> ReactClass " ++ nameProps ++ "\n" ++
-        camelName ++ " :: ReactClass " ++ nameProps ++ "\n" ++
-        camelName ++ " = mk" ++ name ++ " unit\n"
+      extern = "foreign import " ++ camelName ++ "Class :: ReactClass " ++ nameProps ++ "\n"
 
       rel = (\f -> NP.concat [f.dir, f.name]) $ parse (relative baseFname fname)
       requireName = prefix ++ rel
 
-
-      js = "exports.mk" ++ name ++ " = function () { return require('" ++ requireName ++ "'); }\n"
-      -- props = "type " ++ nameProps ++ " = \n    " ++ intercalate "\n    "
-      --   [ "{"
-      --   , intercalate ",\n    " (map showField knownTypes)
-      --   , intercalate "\n    " (map showField unknownTypes)
-      --   , "}\n" ]
+      js = "exports." ++ camelName ++ " = require('" ++ requireName ++ "');\n"
       props = "foreign import data " ++ name ++ "Option :: *\n"
-              ++ "type " ++ nameProps ++ " = Foreign\n"
+              ++ "newtype " ++ nameProps ++ " = " ++ nameProps ++ " Foreign\n"
               ++ toLowerInitial nameProps ++ " :: Options " ++ name ++ "Option -> " ++ nameProps ++ "\n"
-              ++ toLowerInitial nameProps ++ " = options\n"
+              ++ toLowerInitial nameProps ++ " = " ++ nameProps ++ " <<< options\n"
+              ++ toLowerInitial name ++ " :: Options " ++ name ++ "Option -> Array ReactElement -> ReactElement\n"
+              ++ toLowerInitial name ++ " opts = createElement " ++ camelName ++ "Class " ++ "(" ++ toLowerInitial nameProps ++ " opts)\n"
               ++ intercalate "" (map showFieldOption types)
 
-
-  in { extern, js, props }
+  in { extern, js, props, name }
   where
     nameProps = name ++ "Props"
 
@@ -108,7 +102,7 @@ getType baseFname fname name prefix info =
           (PUnknown s) -> " -- " ++ s
           _ -> "")
       ++ "\n"
-      where optName = "opt" ++ name ++ "_" ++ toUpperInitial pname
+      where optName = toLowerInitial pname
 
 
     showField (Tuple pname (PUnknown s)) = "-- " ++ pname ++ " :: {" ++ s ++ "}"
@@ -121,29 +115,54 @@ getOutputFiles baseFname moduleName prefix outDir files = do
   infos :: Array (Maybe TranslateResults) <- traverse getOutputType files
   let infos' :: Array TranslateResults
       infos' = A.mapMaybe id infos
-  let purs = "module " ++ moduleName ++ " where" ++ """
-import Prelude (Unit, unit)
-import React (EventHandler, ReactClass)
-import Data.Options (Option, Options, opt, options)
+      mainPurs = "module " ++ moduleName ++ " where" ++ """
+import Prelude (Unit)
+import React (EventHandler, ReactElement)
 import Data.Foreign (Foreign)
+import Unsafe.Coerce (unsafeCoerce)
 
 newtype EventHandlerOpt = EventHandlerOpt (EventHandler Unit)
 
 newtype UnknownType = UnknownType Foreign
-"""
-        ++ (S.joinWith "" $ map _.extern infos' ++ map _.props infos')
-  let js = "// module " ++ moduleName ++ """
+
+foreign import data Node :: *
+
+numberNode :: Number -> Node
+numberNode = unsafeCoerce
+numbersNode :: Array Number -> Node
+numbersNode = unsafeCoerce
+stringNode :: String -> Node
+stringNode = unsafeCoerce
+stringsNode :: Array String -> Node
+stringsNode = unsafeCoerce
+elementNode :: ReactElement -> Node
+elementNode = unsafeCoerce
+elementsNode :: Array ReactElement -> Node
+elementsNode = unsafeCoerce
 
 """
-            ++ (S.joinWith "" $ map _.js infos')
-  FS.writeTextFile E.UTF8 (NP.concat [outDir, moduleName] ++ ".purs") purs
-  FS.writeTextFile E.UTF8 (NP.concat [outDir, moduleName] ++ ".js") js
+      purs mn {extern, props} = "module " ++ mn ++ " where" ++ """
+import Prelude (Unit, unit, (<<<))
+import React (EventHandler, ReactClass, ReactElement, createElement)
+import Data.Options (Option, Options, opt, options)
+import Data.Foreign (Foreign)
+"""
+        ++ "import " ++ moduleName ++ " (EventHandlerOpt, UnknownType, Node)\n"
+        ++ extern ++ props
+      js mn info = "// module " ++ mn ++ "\n\n" ++ info.js
+
+  FS.writeTextFile E.UTF8 (NP.concat [outDir, moduleName] ++ ".purs") mainPurs
+  void $ traverse (\info -> do
+    let mn = moduleName ++ "." ++ info.name
+    FS.writeTextFile E.UTF8 (NP.concat [outDir, moduleName, info.name] ++ ".purs") (purs mn info)
+    FS.writeTextFile E.UTF8 (NP.concat [outDir, moduleName, info.name] ++ ".js") (js mn info)
+    ) infos'
 
   where
   getOutputType :: forall e'. FilePath -> Eff (fs :: FS.FS, console :: CONSOLE | e') (Maybe TranslateResults)
   getOutputType fname = catchException
     (\e -> do
-      error $ "Failed to read: " ++ fname ++ ": " ++ show e
+      error $ "Failed processing: " ++ fname ++ ": " ++ show e
       pure Nothing)
     do
       let name = kebabToPascal $ _.name $ parse fname
@@ -155,8 +174,10 @@ newtype UnknownType = UnknownType Foreign
 main :: forall e. Eff (console :: CONSOLE, fs :: FS.FS, process :: P.PROCESS, err :: EXCEPTION | e) Unit
 main = do
   argv <- P.argv
+  log $ "Input: " ++ intercalate " | " argv
   case { base: _, moduleName: _, prefix: _, outDir: _ } <$> argv !! 2 <*> argv !! 3 <*> argv !! 4 <*> argv !! 5 of
     Just { base, moduleName, prefix, outDir } -> do
-      log "Running getOutputFiles"
-      getOutputFiles base moduleName prefix outDir $ A.drop 5 argv
+      log $ "Running getOutputFiles : " ++ base ++ " / " ++ moduleName ++ " / " ++ prefix ++ " / " ++ outDir
+      log $ "Files: " ++ intercalate " , " (A.drop 6 argv)
+      getOutputFiles base moduleName prefix outDir $ A.drop 6 argv
     _ -> error "Usage: gen baseFileName moduleName prefix outDir [files...]"
