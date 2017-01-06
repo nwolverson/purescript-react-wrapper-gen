@@ -9,6 +9,7 @@ import Data.List as L
 import Data.StrMap as M
 import Data.Traversable (traverse)
 import Data.Foldable (intercalate)
+import Data.String (Pattern(..))
 import Data.String as S
 import Data.Char as C
 import Control.Monad.Eff (Eff)
@@ -21,6 +22,7 @@ import Node.Process as P
 import Node.Path (FilePath, parse, relative)
 import Node.Path (concat) as NP
 import React.DocGen as DG
+import String ((++))
 
 data PropType = PBool | PFunc | PNumber | PString | PElement | PNode | PUnknown String
 
@@ -52,11 +54,11 @@ excludeProp _ = false
 mapStrInitial :: (Char -> Char) -> String -> String
 mapStrInitial f s =
   case S.uncons s of
-    Just { head : c, tail : s } -> (C.toString <<< f) c ++ s
+    Just { head : c, tail : s } -> (S.singleton <<< f) c ++ s
     Nothing -> ""
 
 sepToPascal :: String -> String -> String
-sepToPascal sep = S.joinWith "" <<< map toUpperInitial <<< S.split sep
+sepToPascal sep = S.joinWith "" <<< map toUpperInitial <<< S.split (Pattern sep)
 
 toUpperInitial :: String -> String
 toUpperInitial = mapStrInitial C.toUpper
@@ -169,7 +171,7 @@ import Data.Foreign (Foreign)
       contents <- FS.readTextFile E.UTF8 fname
       info <- DG.parse contents
       log $ "Read: " ++ fname
-      return $ Just $ getType baseFname fname name prefix info
+      pure $ Just $ getType baseFname fname name prefix info
 
 main :: forall e. Eff (console :: CONSOLE, fs :: FS.FS, process :: P.PROCESS, err :: EXCEPTION | e) Unit
 main = do
