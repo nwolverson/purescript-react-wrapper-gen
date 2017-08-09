@@ -11,13 +11,12 @@
     "output"
   ],
   "dependencies": {
-    "purescript-console": "~2.0.0",
-    "purescript-node-fs": "~3.0.0",
-    "purescript-node-process": "~3.0.0",
-    "purescript-foldable-traversable": "~2.0.0",
-    "purescript-node-path": "~1.0.0",
-    "purescript-foreign": "~3.0.1",
-    "purescript-prelude": "~2.1.0",
-    "purescript-preface": "~1.1.0"
+    "purescript-console": "~3.0.0",
+    "purescript-node-fs": "~4.0.0",
+    "purescript-node-process": "~5.0.0",
+    "purescript-foldable-traversable": "~3.4.0",
+    "purescript-node-path": "~2.0.0",
+    "purescript-foreign": "~4.0.1",
+    "purescript-prelude": "~3.1.0"
   }
 }
