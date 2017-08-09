@@ -83,8 +83,8 @@ getType baseFname fname name prefix info =
       rel = (\f -> NP.concat [f.dir, f.name]) $ parse (relative baseFname fname)
       requireName = prefix <> rel
 
-      js = "exports." <> camelName <> " = require('" <> requireName <> "');\n"
-      props = "foreign import data " <> name <> "Option :: *\n"
+      js = "exports." <> camelName <> "Class = require('" <> requireName <> "');\n"
+      props = "foreign import data " <> name <> "Option :: Type\n"
               <> "newtype " <> nameProps <> " = " <> nameProps <> " Foreign\n"
               <> toLowerInitial nameProps <> " :: Options " <> name <> "Option -> " <> nameProps <> "\n"
               <> toLowerInitial nameProps <> " = " <> nameProps <> " <<< options\n"
@@ -126,7 +126,7 @@ newtype EventHandlerOpt = EventHandlerOpt (EventHandler Unit)
 
 newtype UnknownType = UnknownType Foreign
 
-foreign import data Node :: *
+foreign import data Node :: Type
 
 numberNode :: Number -> Node
 numberNode = unsafeCoerce
