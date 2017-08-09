@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "prepack": "pulp build"
+    "prepack": "bower i && pulp build"
   },
   "author": "",
   "license": "MIT",
