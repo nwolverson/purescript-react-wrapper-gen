@@ -23,11 +23,11 @@ import Node.Path (FilePath, parse, relative)
 import Node.Path (concat) as NP
 import React.DocGen as DG
 
-data PropType = PBool | PFunc | PNumber | PString | PElement | PNode | PUnknown String
+data PropType = PBool | PFunc | PNumber | PString | PElement | PNode | PUnknown String | PMissing
 
 propType :: DG.PropInfo -> PropType
-propType p =
-  case p.type.name of
+propType { "type": Just { name } } =
+  case name of
     "bool" -> PBool
     "func" -> PFunc
     "number" -> PNumber
@@ -35,6 +35,18 @@ propType p =
     "node" -> PNode
     "element" -> PElement
     s -> PUnknown s
+propType { flowType: Just { name } } =
+  case name of
+    "string" -> PString
+    "number" -> PNumber
+    "boolean" -> PBool
+    -- "any"
+    -- "void"
+    -- "Object"
+    s -> PUnknown s
+    -- "Class" 
+propType _ = PMissing
+
 
 showType :: PropType -> String
 showType PBool = "Boolean"
@@ -44,6 +56,7 @@ showType PString = "String"
 showType PElement = "ReactElement"
 showType PNode = "Node"
 showType (PUnknown s) = "UnknownType"
+showType PMissing = "UnknownType"
 
 excludeProp :: Tuple String PropType -> Boolean
 excludeProp (Tuple _ (PUnknown _)) = true
@@ -72,7 +85,7 @@ kebabToPascal = sepToPascal "-"
 
 type TranslateResults = { extern :: String, js :: String, props :: String, name :: String }
 
-getType :: FilePath -> FilePath -> String -> String -> DG.DocResult -> TranslateResults
+getType :: FilePath -> FilePath -> String -> String -> (DG.DocResult DG.PropInfo) -> TranslateResults
 getType baseFname fname name prefix info =
   let types = map (\(Tuple s a) -> Tuple s $ propType a) $ M.toUnfoldable info.props
       camelName = toLowerInitial name

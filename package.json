@@ -8,7 +8,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "react-docgen": "^2.4.0"
+    "react-docgen": "^3.0.0-beta6"
   },
   "bin": "./cli.js"
 }
