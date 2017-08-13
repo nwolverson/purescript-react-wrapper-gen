@@ -8,7 +8,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "react-docgen": "^3.0.0-beta6"
+    "react-docgen": "^3.0.0-beta6",
+    "yargs": "^8.0.2"
   },
   "bin": "./cli.js"
 }

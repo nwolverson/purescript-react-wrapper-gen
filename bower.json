@@ -18,6 +18,7 @@
     "purescript-node-path": "~2.0.0",
     "purescript-foreign": "~4.0.1",
     "purescript-prelude": "~3.1.0",
-    "purescript-undefinable": "^3.0.0"
+    "purescript-undefinable": "^3.0.0",
+    "purescript-yargs": "^3.0.1"
   }
 }

@@ -1,26 +1,33 @@
 module React.WrapperGen.Main where
 
 import Prelude
-import Data.Maybe (Maybe(Just,Nothing))
+
+import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Console (CONSOLE, error, log)
+import Control.Monad.Eff.Exception (EXCEPTION, catchException)
+import Control.Monad.Except (runExcept)
 import Data.Array ((!!))
 import Data.Array as A
-import Data.Tuple (Tuple(Tuple))
-import Data.List as L
-import Data.StrMap as M
-import Data.Traversable (traverse)
+import Data.Char as C
+import Data.Either (Either(..), hush)
 import Data.Foldable (intercalate)
+import Data.Foreign (Foreign, readString)
+import Data.Int (base36)
+import Data.List as L
+import Data.Maybe (Maybe(Just, Nothing))
+import Data.StrMap as M
 import Data.String (Pattern(..))
 import Data.String as S
-import Data.Char as C
-import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Exception (EXCEPTION, catchException)
-import Control.Monad.Eff.Console (CONSOLE, error, log)
+import Data.Traversable (traverse)
+import Data.Tuple (Tuple(Tuple))
+import Node.Encoding as E
 import Node.FS (FS) as FS
 import Node.FS.Sync (writeTextFile, readTextFile) as FS
-import Node.Encoding as E
-import Node.Process as P
 import Node.Path (FilePath, parse, relative)
 import Node.Path (concat) as NP
+import Node.Process as P
+import Node.Yargs.Applicative (Y, flag, rest, runY, yarg)
+import Node.Yargs.Setup (defaultHelp, usage)
 import React.DocGen as DG
 
 data PropType = PBool | PFunc | PNumber | PString | PElement | PNode | PUnknown String | PMissing
@@ -85,8 +92,8 @@ kebabToPascal = sepToPascal "-"
 
 type TranslateResults = { extern :: String, js :: String, props :: String, name :: String }
 
-getType :: FilePath -> FilePath -> String -> String -> (DG.DocResult DG.PropInfo) -> TranslateResults
-getType baseFname fname name prefix info =
+getType :: Boolean -> FilePath -> FilePath -> String -> String -> (DG.DocResult DG.PropInfo) -> TranslateResults
+getType default baseFname fname name prefix info =
   let types = map (\(Tuple s a) -> Tuple s $ propType a) $ M.toUnfoldable info.props
       camelName = toLowerInitial name
       knownTypes = L.filter (not <<< excludeProp) types
@@ -96,7 +103,8 @@ getType baseFname fname name prefix info =
       rel = (\f -> NP.concat [f.dir, f.name]) $ parse (relative baseFname fname)
       requireName = prefix <> rel
 
-      js = "exports." <> camelName <> "Class = require('" <> requireName <> "').default;\n"
+      js = "exports." <> camelName <> "Class = require('" <> requireName <> "')"
+              <> (if default then ".default" else "") <> ";\n"
       props = "foreign import data " <> name <> "Option :: Type\n"
               <> "newtype " <> nameProps <> " = " <> nameProps <> " Foreign\n"
               <> toLowerInitial nameProps <> " :: Options " <> name <> "Option -> " <> nameProps <> "\n"
@@ -128,8 +136,8 @@ getType baseFname fname name prefix info =
     showField (Tuple pname ty) = (if pname /= toLowerInitial pname then "-- " else "")
       <> pname <> " :: " <> showType ty
 
-getOutputFiles :: forall e. FilePath -> String -> String -> String -> Array FilePath -> Eff (fs :: FS.FS, exception :: EXCEPTION, console :: CONSOLE | e) Unit
-getOutputFiles baseFname moduleName prefix outDir files = do
+getOutputFiles :: forall e. FilePath -> String -> String -> String -> Boolean -> Array FilePath -> Eff (fs :: FS.FS, exception :: EXCEPTION, console :: CONSOLE | e) Unit
+getOutputFiles baseFname moduleName prefix outDir default files = do
   log $ "Generating for " <> (show $ A.length files) <> " files"
   infos :: Array (Maybe TranslateResults) <- traverse getOutputType files
   let infos' :: Array TranslateResults
@@ -188,15 +196,28 @@ import Data.Foreign (Foreign)
       contents <- FS.readTextFile E.UTF8 fname
       info <- DG.parse contents
       log $ "Read: " <> fname
-      pure $ Just $ getType baseFname fname name prefix info
+      pure $ Just $ getType default baseFname fname name prefix info
+
+generate :: String -> String -> String -> String -> Boolean -> Array Foreign -> Eff _ Unit
+generate base moduleName prefix outDir default argsF = do
+  let args = A.mapMaybe (hush <<< runExcept <<< readString) argsF
+  log $ "Files: " <> intercalate " , " args
+  getOutputFiles base moduleName prefix outDir default args
 
 main :: forall e. Eff (console :: CONSOLE, fs :: FS.FS, process :: P.PROCESS, exception :: EXCEPTION | e) Unit
 main = do
-  argv <- P.argv
-  log $ "Input: " <> intercalate " | " argv
-  case { base: _, moduleName: _, prefix: _, outDir: _ } <$> argv !! 2 <*> argv !! 3 <*> argv !! 4 <*> argv !! 5 of
-    Just { base, moduleName, prefix, outDir } -> do
-      log $ "Running getOutputFiles : " <> base <> " / " <> moduleName <> " / " <> prefix <> " / " <> outDir
-      log $ "Files: " <> intercalate " , " (A.drop 6 argv)
-      getOutputFiles base moduleName prefix outDir $ A.drop 6 argv
-    _ -> error "Usage: gen baseFileName moduleName prefix outDir [files...]"
+  let 
+      base :: Y String
+      base = yarg "base" [] (Just "Base directory of input files") (Right "Base input directory is required") true
+      moduleName :: Y String
+      moduleName = yarg "module" ["m"] (Just "Base module name to use") (Right "Module name is required") false
+      prefix :: Y String
+      prefix = yarg "prefix" [] (Just "Prefix for require calls") (Left "") true
+      outDir :: Y String
+      outDir = yarg "outDir" ["o"] (Just "Directory in which to generate output") (Left "generated") true
+      default :: Y Boolean
+      default = flag "default" [] (Just "Generate requires to .default")
+
+      setup = usage "$0 --base base/dir --module ModuleName --prefix prefix/dir -o outputdir files..."
+        <> defaultHelp
+  runY setup $ generate <$> base <*> moduleName <*> prefix <*> outDir  <*> default <*> rest
