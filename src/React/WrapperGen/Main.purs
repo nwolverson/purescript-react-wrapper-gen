@@ -96,7 +96,7 @@ getType baseFname fname name prefix info =
       rel = (\f -> NP.concat [f.dir, f.name]) $ parse (relative baseFname fname)
       requireName = prefix <> rel
 
-      js = "exports." <> camelName <> "Class = require('" <> requireName <> "');\n"
+      js = "exports." <> camelName <> "Class = require('" <> requireName <> "').default;\n"
       props = "foreign import data " <> name <> "Option :: Type\n"
               <> "newtype " <> nameProps <> " = " <> nameProps <> " Foreign\n"
               <> toLowerInitial nameProps <> " :: Options " <> name <> "Option -> " <> nameProps <> "\n"
@@ -116,7 +116,12 @@ getType baseFname fname name prefix info =
           (PUnknown s) -> " -- " <> s
           _ -> "")
       <> "\n"
-      where optName = toLowerInitial pname
+      where optName = mungeName $ toLowerInitial pname
+
+    mungeName name
+      | name == "type" || name == "inputProps"
+          = name <> "'"
+      | otherwise = name
 
 
     showField (Tuple pname (PUnknown s)) = "-- " <> pname <> " :: {" <> s <> "}"
